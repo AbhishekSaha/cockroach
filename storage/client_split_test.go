@@ -577,6 +577,7 @@ func TestStoreZoneUpdateAndRangeSplit(t *testing.T) {
 // split.
 func TestStoreRangeSplitWithMaxBytesUpdate(t *testing.T) {
 	defer leaktest.AfterTest(t)
+	t.Skip("#3749")
 	store, stopper := createTestStore(t)
 	config.TestingSetupZoneConfigHook(stopper)
 	defer stopper.Stop()
