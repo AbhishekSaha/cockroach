@@ -25,12 +25,10 @@ package storage
 // need to be replicated. Exposed only for testing.
 func (s *Store) ForceReplicationScan() {
 	s.mu.Lock()
-
-	for _, r := range s.replicas {
+	defer s.mu.Unlock()
+	for _, r := range s.mu.replicas {
 		s.replicateQueue.MaybeAdd(r, s.ctx.Clock.Now())
 	}
-
-	s.mu.Unlock()
 }
 
 // DisableReplicaGCQueue disables or enables the replica GC queue.
@@ -43,8 +41,7 @@ func (s *Store) DisableReplicaGCQueue(disabled bool) {
 // may need to be GC'd. Exposed only for testing.
 func (s *Store) ForceReplicaGCScanAndProcess() {
 	s.mu.Lock()
-
-	for _, r := range s.replicas {
+	for _, r := range s.mu.replicas {
 		s.replicaGCQueue.MaybeAdd(r, s.ctx.Clock.Now())
 	}
 	s.mu.Unlock()
@@ -62,30 +59,15 @@ func (s *Store) DisableRaftLogQueue(disabled bool) {
 // need their raft logs truncated and then process each of them.
 // Exposed only for testing.
 func (s *Store) ForceRaftLogScanAndProcess() {
-	// NB: This copy allows calling s.mu.RUnlock() before calling MaybeAdd, which
-	// is necessary to avoid deadlocks. Without it, a concurrent call to
-	// (*Store).mu.Lock() will deadlock the system:
-	//
-	// (*Store).mu.RLock()
-	//
-	// Start of (*Store).mu.Lock() danger zone
-	//
-	// raftLogQueue.MaybeAdd
-	// raftLogQueue.shouldQueue
-	// getTruncatableIndexes
-	// (*Store).RaftStatus
-	//
-	// End of (*Store).mu.Lock() danger zone
-	//
-	// (*Store).mu.RLock()
-	//
-	// See http://play.golang.org/p/xTJiAiRfYf
-	replicas := make([]*Replica, 0, len(s.replicas))
-	s.mu.RLock()
-	for _, r := range s.replicas {
+	// This copy allows calling s.Unlock() before calling MaybeAdd, which is
+	// necessary to avoid deadlocks. Without it, a concurrent call to
+	// (*Store).mu.Lock() will deadlock the system.
+	s.mu.Lock()
+	replicas := make([]*Replica, 0, len(s.mu.replicas))
+	for _, r := range s.mu.replicas {
 		replicas = append(replicas, r)
 	}
-	s.mu.RUnlock()
+	s.mu.Unlock()
 
 	// Add each range to the queue.
 	for _, r := range replicas {
